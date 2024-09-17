@@ -27,6 +27,9 @@ import java.util.*;
  */
 public class MySqlDDLParserListenerImpl extends MySQLDDLParserBaseListener {
     private static final Logger log = LogManager.getLogger(MySqlDDLParserListenerImpl.class);
+    // TODO: add all Clickhouse non-nullable types
+    private static final Set<String> NON_NULLABLE_TYPES = new HashSet<>(Arrays.asList("Point", "Polygon"));
+
     StringBuffer query;
     String tableName;
     ClickHouseSinkConnectorConfig config;
@@ -276,9 +279,7 @@ public class MySqlDDLParserListenerImpl extends MySQLDDLParserBaseListener {
                         if (colDefinitionChildTree.getText().equalsIgnoreCase(Constants.NOT_NULL))
                             isNullColumn = false;
                     } else if(colDefinitionChildTree instanceof MySqlParser.DimensionDataTypeContext) {
-                        if (colDefinitionChildTree.getText() != null) {
-
-                        }
+                        // Handle dimension data type if needed
                     } else if (colDefinitionChildTree instanceof MySqlParser.PrimaryKeyColumnConstraintContext) {
                         for(ParseTree primaryKeyTree: ((MySqlParser.PrimaryKeyColumnConstraintContext) colDefinitionChildTree).children) {
                             System.out.println(primaryKeyTree.getText());
@@ -290,32 +291,30 @@ public class MySqlDDLParserListenerImpl extends MySQLDDLParserBaseListener {
                             if(generatedColumnTree instanceof MySqlParser.ExpressionContext) {
                                 isGeneratedColumn = true;
                                 generatedColumn = generatedColumnTree.getText();
-                                //this.query.append(Constants.AS).append(" ").append(expression);
                             }
                         }
-
                     }
                 }
-                if(isGeneratedColumn) {
-                    if(isNullColumn){
-                        this.query.append(Constants.NULLABLE).append("(").append(colDataType)
-                                .append(")");
-                    } else
-                        this.query.append(colDataType);
 
+                if(isGeneratedColumn) {
+                    appendColumnType(colDataType, isNullColumn);
                     this.query.append(" ").append(Constants.ALIAS).append(" ").append(generatedColumn).append(",");
                     continue;
                 }
 
-                if(isNullColumn) {
-                    this.query.append(Constants.NULLABLE).append("(").append(colDataType)
-                            .append(")").append(",");
-                }
-                else {
-                    this.query.append(colDataType).append(" ").append(Constants.NOT_NULLABLE).append(" ").append(",");
-                }
+                appendColumnType(colDataType, isNullColumn);
                 columnNames.add(columnName);
             }
+        }
+    }
+
+    private void appendColumnType(String colDataType, boolean isNullColumn) {
+        if (NON_NULLABLE_TYPES.contains(colDataType)) {
+            this.query.append(colDataType).append(" ").append(Constants.NOT_NULLABLE).append(" ").append(",");
+        } else if (isNullColumn) {
+            this.query.append(Constants.NULLABLE).append("(").append(colDataType).append(")").append(",");
+        } else {
+            this.query.append(colDataType).append(" ").append(Constants.NOT_NULLABLE).append(" ").append(",");
         }
     }
 
@@ -485,11 +484,15 @@ public class MySqlDDLParserListenerImpl extends MySQLDDLParserBaseListener {
             }
         }
 
-        if (columnName != null && columnType != null)
-            if (isNullColumn) {
-                this.query.append(" ").append(String.format(modifierWithNull, columnName, columnType)).append(" ");
-            } else
+        if (columnName != null && columnType != null) {
+            if (NON_NULLABLE_TYPES.contains(columnType)) {
+                this.query.append(" ").append(String.format(modifier, columnName, columnType)).append(" ").append(Constants.NOT_NULLABLE);
+            } else if (isNullColumn) {
                 this.query.append(" ").append(String.format(modifier, columnName, columnType));
+            } else {
+                this.query.append(" ").append(String.format(modifierWithNull, columnName, columnType)).append(" ");
+            }
+        }
         if (defaultModifier != null && defaultModifier.isEmpty() == false) {
             this.query.append(" ").append(defaultModifier);
         }
