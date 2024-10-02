@@ -39,7 +39,7 @@ public class ClickHouseBatchWriter {
     // For insert batch the database connection has to be the same.
     // Create a map of database name to ClickHouseConnection.
     private Map<String, ClickHouseConnection> databaseToConnectionMap = new HashMap<>();
-    
+
     private static final Logger log = LogManager.getLogger(ClickHouseBatchWriter.class);
 
     // Map of topic names to table names.
@@ -160,6 +160,14 @@ public class ClickHouseBatchWriter {
                     } catch (InterruptedException e) {
                         //throw new RuntimeException(e);
                         log.error("Error marking records as processed"+ e);
+                    }
+
+                    if(record.isLastRecordInBatch()) {
+                        try {
+                            record.getCommitter().markBatchFinished();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
                     }
                 });
             }
